@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Verbatim Dictionary",
+  "version": "1.0.0",
+  "description": "Instant word definitions across subtitles and web text. Works on YouTube, Wikipedia, and more.",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": [
+    "https://api.dictionaryapi.dev/*",
+    "*://*.youtube.com/*",
+    "*://*.wikipedia.org/*",
+    "*://*.netflix.com/*",
+    "*://*/*"
+  ],
+  "background": {
+    "service_worker": "dictionary.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.wikipedia.org/*",
+        "*://*.netflix.com/*",
+        "*://*/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_title": "Verbatim Dictionary"
+  }
+}
