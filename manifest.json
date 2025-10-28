@@ -11,9 +11,6 @@
     "*://*.netflix.com/*",
     "*://*/*"
   ],
-  "background": {
-    "service_worker": "dictionary.js"
-  },
   "content_scripts": [
     {
       "matches": [
