@@ -1,11 +1,19 @@
 const popup = document.createElement('div');
 popup.id = 'verbatim-popup';
-popup.style.position = 'fixed';
-popup.style.background = '#333';
-popup.style.color = 'white';
-popup.style.padding = '5px';
-popup.style.zIndex = '10000';
-popup.style.display = 'none';
+Object.assign(popup.style, {
+  position: 'fixed',
+  background: 'rgba(0, 0, 0, 0.9)',
+  color: 'white',
+  padding: '8px 12px',
+  borderRadius: '4px',
+  fontSize: '14px',
+  fontFamily: 'Arial, sans-serif',
+  zIndex: '2147483647',
+  display: 'none',
+  maxWidth: '300px',
+  boxShadow: '0 2px 10px rgba(0, 0, 0, 0.3)',
+  lineHeight: '1.3'
+});
 document.body.appendChild(popup);
 function showpopup(x, y, text) {
   popup.textContent = text;
