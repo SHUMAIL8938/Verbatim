@@ -17,7 +17,8 @@ Object.assign(popup.style, {
 if (!document.getElementById('verbatim-popup')) {
   document.body.appendChild(popup);
 }
-function showPopup(x, y, text) {
+let popupTimer = null;
+function showPopup(x, y, text, duration = 6000) {
   popup.textContent = text;
   let left = x + 10;
   if (left + 300 > window.innerWidth) {
@@ -32,15 +33,27 @@ function showPopup(x, y, text) {
   popup.style.left = left + 'px';
   popup.style.top = top + 'px';
   popup.style.display = 'block';
-  console.log(`Popup positioned at ${left}, ${top}`);
+  if (popupTimer) clearTimeout(popupTimer);
+  popupTimer = setTimeout(() => {
+    hidePopup();
+  }, duration);
+  console.log(`Popup shown, auto-hide in ${duration}ms`);
 }
 function hidePopup() {
   popup.style.display = 'none';
+  if (popupTimer) {
+    clearTimeout(popupTimer);
+    popupTimer = null;
+  }
 }
+document.addEventListener('click', function(event) {
+  if (event.target !== popup) {
+    hidePopup();
+  }
+});
 function cleanWord(text) {
   if (!text) return '';
-  let word = text.trim().toLowerCase();
-  return word.replace(/[.,!?;:"()[\]{}]/g, '');
+  return text.trim().toLowerCase().replace(/[.,!?;:"()[\]{}]/g, '');
 }
 async function lookupWord(word) {
   const cleanedWord = cleanWord(word);
@@ -60,14 +73,14 @@ async function lookupWord(word) {
     return definition || 'No definition available';
   } catch (error) {
     console.error('API Error:', error);
-    return 'Error loading definition';
+    return 'Network error occurred';
   }
 }
 document.addEventListener('dblclick', async function(event) {
   const selectedText = window.getSelection().toString().trim();
   if (selectedText) {
-    showPopup(event.clientX, event.clientY, 'Loading...');
+    showPopup(event.clientX, event.clientY, 'Loading...', 12000);
     const definition = await lookupWord(selectedText);
-    showPopup(event.clientX, event.clientY, `${cleanWord(selectedText)}: ${definition}`);
+    showPopup(event.clientX, event.clientY, `${cleanWord(selectedText)}: ${definition}`, 6000);
   }
 });
