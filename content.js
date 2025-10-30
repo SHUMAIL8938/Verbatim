@@ -1,3 +1,4 @@
+let lookupInProgress = false;
 const popup = document.getElementById('verbatim-popup') || document.createElement('div');
 popup.id = 'verbatim-popup';
 Object.assign(popup.style, {
@@ -56,6 +57,21 @@ function cleanWord(text) {
   if (!text) return '';
   return text.trim().toLowerCase().replace(/[.,!?;:"()[\]{}]/g, '');
 }
+async function fetchWithTimeout(url, timeout = 5000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Request timeout');
+    }
+    throw error;
+  }
+}
 async function lookupWord(word) {
   const cleanedWord = cleanWord(word);
   if (!cleanedWord || cleanedWord.length < 2) {
@@ -67,7 +83,7 @@ async function lookupWord(word) {
   }
   console.log('Cache miss for:', cleanedWord);
   try {
-    const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${cleanedWord}`);
+    const response = await fetchWithTimeout(`https://api.dictionaryapi.dev/api/v2/entries/en/${cleanedWord}`, 5000);
     if (!response.ok) {
       const errorMsg = response.status === 404 ? `"${cleanedWord}" not found` : 'Network error occurred';
       definitionCache.set(cleanedWord, errorMsg); 
@@ -80,16 +96,18 @@ async function lookupWord(word) {
     return definition;
   } catch (error) {
     console.error('API Error:', error);
-    const errorMsg = 'Network error occurred';
+    const errorMsg = error.message === 'Request timeout' ? 'Request timed out' : 'Network error occurred';
     definitionCache.set(cleanedWord, errorMsg);
     return errorMsg;
   }
 }
 document.addEventListener('dblclick', async function(event) {
   const selectedText = window.getSelection().toString().trim();
-  if (selectedText) {
+  if (selectedText && !lookupInProgress) {
+    lookupInProgress = true;
     showPopup(event.clientX, event.clientY, 'Loading...', 12000);
     const definition = await lookupWord(selectedText);
     showPopup(event.clientX, event.clientY, `${cleanWord(selectedText)}: ${definition}`, 6000);
+    lookupInProgress = false;
   }
 });
