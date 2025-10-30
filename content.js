@@ -18,6 +18,7 @@ if (!document.getElementById('verbatim-popup')) {
   document.body.appendChild(popup);
 }
 let popupTimer = null;
+const definitionCache = new Map();
 function showPopup(x, y, text, duration = 6000) {
   popup.textContent = text;
   let left = x + 10;
@@ -60,20 +61,28 @@ async function lookupWord(word) {
   if (!cleanedWord || cleanedWord.length < 2) {
     return 'Invalid word selection';
   }
+  if (definitionCache.has(cleanedWord)) {
+    console.log('Cache hit for:', cleanedWord);
+    return definitionCache.get(cleanedWord);
+  }
+  console.log('Cache miss for:', cleanedWord);
   try {
     const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${cleanedWord}`);
     if (!response.ok) {
-      if (response.status === 404) {
-        return `"${cleanedWord}" not found`;
-      }
-      throw new Error(`HTTP ${response.status}`);
+      const errorMsg = response.status === 404 ? `"${cleanedWord}" not found` : 'Network error occurred';
+      definitionCache.set(cleanedWord, errorMsg); 
+      return errorMsg;
     }
     const data = await response.json();
-    const definition = data?.[0]?.meanings?.[0]?.definitions?.[0]?.definition;
-    return definition || 'No definition available';
+    const definition = data?.[0]?.meanings?.[0]?.definitions?.[0]?.definition || 'No definition available';
+    definitionCache.set(cleanedWord, definition);
+    console.log('Cached definition for:', cleanedWord);
+    return definition;
   } catch (error) {
     console.error('API Error:', error);
-    return 'Network error occurred';
+    const errorMsg = 'Network error occurred';
+    definitionCache.set(cleanedWord, errorMsg);
+    return errorMsg;
   }
 }
 document.addEventListener('dblclick', async function(event) {
