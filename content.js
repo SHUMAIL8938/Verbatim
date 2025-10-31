@@ -55,7 +55,15 @@ document.addEventListener('click', function(event) {
 });
 function cleanWord(text) {
   if (!text) return '';
-  return text.trim().toLowerCase().replace(/[.,!?;:"()[\]{}]/g, '');
+  let word = text.trim();
+  if (word.includes(' ')) {
+    word = word.split(' ')[0];
+  }
+  word = word.toLowerCase();
+  word = word.replace(/^[^a-z''-]+|[^a-z''-]+$/gi, '');
+  word = word.replace(/[\u2018\u2019\u201B\u2032]/g, "'");
+  
+  return word.length > 0 && word.length < 50 ? word : '';
 }
 async function fetchWithTimeout(url, timeout = 5000) {
   const controller = new AbortController();
