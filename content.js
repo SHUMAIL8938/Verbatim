@@ -20,6 +20,16 @@ if (!document.getElementById('verbatim-popup')) {
 }
 let popupTimer = null;
 const definitionCache = new Map();
+const MAX_CACHE_SIZE = 100;
+function setCacheEntry(key, value) {
+  if (definitionCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = definitionCache.keys().next().value;
+    definitionCache.delete(firstKey);
+    console.log('Cache full, removed:', firstKey);
+  }
+  definitionCache.set(key, value);
+  console.log('Cache size:', definitionCache.size);
+}
 function showPopup(x, y, text, duration = 6000) {
   popup.textContent = text;
   let left = x + 10;
@@ -62,7 +72,6 @@ function cleanWord(text) {
   word = word.toLowerCase();
   word = word.replace(/^[^a-z''-]+|[^a-z''-]+$/gi, '');
   word = word.replace(/[\u2018\u2019\u201B\u2032]/g, "'");
-  
   return word.length > 0 && word.length < 50 ? word : '';
 }
 async function fetchWithTimeout(url, timeout = 5000) {
@@ -94,18 +103,18 @@ async function lookupWord(word) {
     const response = await fetchWithTimeout(`https://api.dictionaryapi.dev/api/v2/entries/en/${cleanedWord}`, 5000);
     if (!response.ok) {
       const errorMsg = response.status === 404 ? `"${cleanedWord}" not found` : 'Network error occurred';
-      definitionCache.set(cleanedWord, errorMsg); 
+      setCacheEntry(cleanedWord, errorMsg);
       return errorMsg;
     }
     const data = await response.json();
     const definition = data?.[0]?.meanings?.[0]?.definitions?.[0]?.definition || 'No definition available';
-    definitionCache.set(cleanedWord, definition);
+    setCacheEntry(cleanedWord, definition);
     console.log('Cached definition for:', cleanedWord);
     return definition;
   } catch (error) {
     console.error('API Error:', error);
     const errorMsg = error.message === 'Request timeout' ? 'Request timed out' : 'Network error occurred';
-    definitionCache.set(cleanedWord, errorMsg);
+    setCacheEntry(cleanedWord, errorMsg);
     return errorMsg;
   }
 }
