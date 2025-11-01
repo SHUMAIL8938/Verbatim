@@ -3,17 +3,20 @@ const popup = document.getElementById('verbatim-popup') || document.createElemen
 popup.id = 'verbatim-popup';
 Object.assign(popup.style, {
   position: 'fixed',
-  background: 'rgba(0, 0, 0, 0.9)',
-  color: 'white',
-  padding: '8px 12px',
-  borderRadius: '4px',
-  fontSize: '14px',
-  fontFamily: 'Arial, sans-serif',
+  background: 'rgba(0, 0, 0, 0.92)',
+  color: '#ffffff',
+  padding: '10px 14px',
+  borderRadius: '6px',
+  fontSize: '13px',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif',
+  lineHeight: '1.4',
   zIndex: '2147483647',
   display: 'none',
-  maxWidth: '300px',
-  boxShadow: '0 2px 10px rgba(0, 0, 0, 0.3)',
-  lineHeight: '1.3'
+  maxWidth: '320px',
+  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.35)',
+  border: '1px solid rgba(255, 255, 255, 0.1)',
+  transition: 'opacity 0.2s ease',
+  wordWrap: 'break-word'
 });
 if (!document.getElementById('verbatim-popup')) {
   document.body.appendChild(popup);
@@ -25,34 +28,33 @@ function setCacheEntry(key, value) {
   if (definitionCache.size >= MAX_CACHE_SIZE) {
     const firstKey = definitionCache.keys().next().value;
     definitionCache.delete(firstKey);
-    console.log('Cache full, removed:', firstKey);
   }
   definitionCache.set(key, value);
-  console.log('Cache size:', definitionCache.size);
 }
 function showPopup(x, y, text, duration = 6000) {
   popup.textContent = text;
-  let left = x + 10;
-  if (left + 300 > window.innerWidth) {
-    left = x - 310;
+  let left = x + 12;
+  if (left + 320 > window.innerWidth) {
+    left = x - 332;
   }
-  let top = y + 10;
+  let top = y + 12;
   if (top + 100 > window.innerHeight) {
-    top = y - 110;
+    top = y - 112;
   }
-  left = Math.max(5, left);
-  top = Math.max(5, top);
+  left = Math.max(8, left);
+  top = Math.max(8, top);
   popup.style.left = left + 'px';
   popup.style.top = top + 'px';
   popup.style.display = 'block';
+  popup.style.opacity = '1';
   if (popupTimer) clearTimeout(popupTimer);
-  popupTimer = setTimeout(() => {
-    hidePopup();
-  }, duration);
-  console.log(`Popup shown, auto-hide in ${duration}ms`);
+  popupTimer = setTimeout(() => hidePopup(), duration);
 }
 function hidePopup() {
-  popup.style.display = 'none';
+  popup.style.opacity = '0';
+  setTimeout(() => {
+    popup.style.display = 'none';
+  }, 200);
   if (popupTimer) {
     clearTimeout(popupTimer);
     popupTimer = null;
@@ -92,28 +94,24 @@ async function fetchWithTimeout(url, timeout = 5000) {
 async function lookupWord(word) {
   const cleanedWord = cleanWord(word);
   if (!cleanedWord || cleanedWord.length < 2) {
-    return 'Invalid word selection';
+    return 'Please select a valid word';
   }
   if (definitionCache.has(cleanedWord)) {
-    console.log('Cache hit for:', cleanedWord);
     return definitionCache.get(cleanedWord);
   }
-  console.log('Cache miss for:', cleanedWord);
   try {
     const response = await fetchWithTimeout(`https://api.dictionaryapi.dev/api/v2/entries/en/${cleanedWord}`, 5000);
     if (!response.ok) {
-      const errorMsg = response.status === 404 ? `"${cleanedWord}" not found` : 'Network error occurred';
+      const errorMsg = response.status === 404 ? `"${cleanedWord}" not found` : 'Network error';
       setCacheEntry(cleanedWord, errorMsg);
       return errorMsg;
     }
     const data = await response.json();
     const definition = data?.[0]?.meanings?.[0]?.definitions?.[0]?.definition || 'No definition available';
     setCacheEntry(cleanedWord, definition);
-    console.log('Cached definition for:', cleanedWord);
     return definition;
   } catch (error) {
-    console.error('API Error:', error);
-    const errorMsg = error.message === 'Request timeout' ? 'Request timed out' : 'Network error occurred';
+    const errorMsg = error.message === 'Request timeout' ? 'Request timed out' : 'Network error';
     setCacheEntry(cleanedWord, errorMsg);
     return errorMsg;
   }
@@ -122,9 +120,10 @@ document.addEventListener('dblclick', async function(event) {
   const selectedText = window.getSelection().toString().trim();
   if (selectedText && !lookupInProgress) {
     lookupInProgress = true;
+    const word = cleanWord(selectedText);
     showPopup(event.clientX, event.clientY, 'Loading...', 12000);
     const definition = await lookupWord(selectedText);
-    showPopup(event.clientX, event.clientY, `${cleanWord(selectedText)}: ${definition}`, 6000);
+    showPopup(event.clientX, event.clientY, `${word}: ${definition}`, 6000);
     lookupInProgress = false;
   }
 });
