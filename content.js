@@ -1,3 +1,4 @@
+const isYouTube = window.location.hostname.includes('youtube.com');
 let lookupInProgress = false;
 const popup = document.getElementById('verbatim-popup') || document.createElement('div');
 popup.id = 'verbatim-popup';
@@ -15,7 +16,6 @@ Object.assign(popup.style, {
   maxWidth: '320px',
   boxShadow: '0 4px 12px rgba(0, 0, 0, 0.35)',
   border: '1px solid rgba(255, 255, 255, 0.1)',
-  transition: 'opacity 0.2s ease',
   wordWrap: 'break-word'
 });
 if (!document.getElementById('verbatim-popup')) {
@@ -34,27 +34,19 @@ function setCacheEntry(key, value) {
 function showPopup(x, y, text, duration = 6000) {
   popup.textContent = text;
   let left = x + 12;
-  if (left + 320 > window.innerWidth) {
-    left = x - 332;
-  }
+  if (left + 320 > window.innerWidth) left = x - 332;
   let top = y + 12;
-  if (top + 100 > window.innerHeight) {
-    top = y - 112;
-  }
+  if (top + 100 > window.innerHeight) top = y - 112;
   left = Math.max(8, left);
   top = Math.max(8, top);
   popup.style.left = left + 'px';
   popup.style.top = top + 'px';
   popup.style.display = 'block';
-  popup.style.opacity = '1';
   if (popupTimer) clearTimeout(popupTimer);
   popupTimer = setTimeout(() => hidePopup(), duration);
 }
 function hidePopup() {
-  popup.style.opacity = '0';
-  setTimeout(() => {
-    popup.style.display = 'none';
-  }, 200);
+  popup.style.display = 'none';
   if (popupTimer) {
     clearTimeout(popupTimer);
     popupTimer = null;
@@ -68,9 +60,7 @@ document.addEventListener('click', function(event) {
 function cleanWord(text) {
   if (!text) return '';
   let word = text.trim();
-  if (word.includes(' ')) {
-    word = word.split(' ')[0];
-  }
+  if (word.includes(' ')) word = word.split(' ')[0];
   word = word.toLowerCase();
   word = word.replace(/^[^a-z''-]+|[^a-z''-]+$/gi, '');
   word = word.replace(/[\u2018\u2019\u201B\u2032]/g, "'");
@@ -85,9 +75,7 @@ async function fetchWithTimeout(url, timeout = 5000) {
     return response;
   } catch (error) {
     clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error('Request timeout');
-    }
+    if (error.name === 'AbortError') throw new Error('Request timeout');
     throw error;
   }
 }
@@ -116,14 +104,36 @@ async function lookupWord(word) {
     return errorMsg;
   }
 }
-document.addEventListener('dblclick', async function(event) {
-  const selectedText = window.getSelection().toString().trim();
-  if (selectedText && !lookupInProgress) {
-    lookupInProgress = true;
-    const word = cleanWord(selectedText);
-    showPopup(event.clientX, event.clientY, 'Loading...', 12000);
-    const definition = await lookupWord(selectedText);
-    showPopup(event.clientX, event.clientY, `${word}: ${definition}`, 6000);
+async function handleWordLookup(x, y, word) {
+  if (lookupInProgress) return;
+  lookupInProgress = true;
+  const cleanedWord = cleanWord(word);
+  showPopup(x, y, 'Loading...', 12000);
+  try {
+    const definition = await lookupWord(word);
+    showPopup(x, y, `${cleanedWord}: ${definition}`, 6000);
+  } finally {
     lookupInProgress = false;
   }
+}
+document.addEventListener('dblclick', async function(event) {
+  const selectedText = window.getSelection().toString().trim();
+  if (selectedText) {
+    await handleWordLookup(event.clientX, event.clientY, selectedText);
+  }
 });
+if (isYouTube) {
+  console.log('YouTube caption clicking enabled');
+  function handleCaptionClick(event) {
+    const captionElement = event.target.closest('.ytp-caption-segment');
+    if (captionElement) {
+      const words = captionElement.textContent.trim().split(/\s+/).filter(w => w.trim());
+      if (words.length > 0) {
+        console.log('Caption clicked, looking up:', words[0]);
+        handleWordLookup(event.clientX, event.clientY, words[0]);
+        event.stopPropagation();
+      }
+    }
+  }
+  document.addEventListener('click', handleCaptionClick, true);
+}
