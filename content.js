@@ -2,6 +2,23 @@ const isYouTube = window.location.hostname.includes('youtube.com');
 let lookupInProgress = false;
 let overlay = null;
 let lastCaptionText = '';
+let overlayEnabled = true;
+
+chrome.storage.sync.get(['enabled'], (result) => {
+  overlayEnabled = result.enabled !== false;
+  console.log('Overlay enabled:', overlayEnabled);
+});
+
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.action === 'TOGGLE_OVERLAY') {
+    overlayEnabled = msg.enabled;
+    console.log('Overlay toggled:', overlayEnabled);
+    if (!overlayEnabled) {
+      if (overlay) overlay.style.display = 'none';
+      hidePopup();
+    }
+  }
+});
 
 const popup = document.getElementById('verbatim-popup') || document.createElement('div');
 popup.id = 'verbatim-popup';
@@ -121,6 +138,7 @@ async function fetchDefinition(word) {
 }
 
 document.addEventListener('dblclick', async function(event) {
+  if (!overlayEnabled) return;
   const selectedText = window.getSelection().toString().trim();
   if (selectedText && !lookupInProgress) {
     lookupInProgress = true;
@@ -134,7 +152,8 @@ document.addEventListener('dblclick', async function(event) {
     }
   }
 });
-if (isYouTube) {
+
+if (isYouTube && overlayEnabled) {
   function createOverlay() {
     if (overlay) return overlay;
     
@@ -154,18 +173,17 @@ if (isYouTube) {
     });
     
     overlay.addEventListener('click', async (event) => {
+      if (!overlayEnabled) return;
       const wordSpan = event.target.closest('span[data-word]');
       if (wordSpan && !lookupInProgress) {
         const rawWord = wordSpan.dataset.word;
         const word = normalizeWord(rawWord);
         if (word) {
           lookupInProgress = true;
-          const x = event.clientX;
-          const y = event.clientY;
-          showPopup(x, y, 'Loading...', 15000);
+          showPopup(event.clientX, event.clientY, 'Loading...', 15000);
           try {
             const definition = await fetchDefinition(rawWord);
-            showPopup(x, y, `${word}: ${definition}`, 6000);
+            showPopup(event.clientX, event.clientY, `${word}: ${definition}`, 6000);
           } finally {
             lookupInProgress = false;
           }
@@ -178,6 +196,11 @@ if (isYouTube) {
   }
   
   function updateOverlay() {
+    if (!overlayEnabled) {
+      if (overlay) overlay.style.display = 'none';
+      return;
+    }
+    
     const caption = document.querySelector('.ytp-caption-segment');
     
     if (!caption || !caption.textContent.trim()) {
@@ -187,10 +210,7 @@ if (isYouTube) {
     }
     
     const captionText = caption.textContent;
-    if (captionText === lastCaptionText) {
-      return;
-    }
-    
+    if (captionText === lastCaptionText) return;
     lastCaptionText = captionText;
     
     if (!overlay) createOverlay();
