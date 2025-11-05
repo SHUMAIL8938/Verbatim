@@ -4,6 +4,10 @@ let overlay = null;
 let lastCaptionText = '';
 let overlayEnabled = true;
 
+const CACHE_TTL = 1000 * 60 * 60 * 24; 
+const ERROR_TTL = 1000 * 60 * 5; 
+const MAX_CACHE_ITEMS = 500;
+
 chrome.storage.sync.get(['enabled'], (result) => {
   overlayEnabled = result.enabled !== false;
   console.log('Overlay enabled:', overlayEnabled);
@@ -43,15 +47,50 @@ if (!document.getElementById('verbatim-popup')) {
 }
 
 let popupTimer = null;
-const definitionCache = new Map();
-const MAX_CACHE_SIZE = 100;
 
-function setCacheEntry(key, value) {
-  if (definitionCache.size >= MAX_CACHE_SIZE) {
-    const firstKey = definitionCache.keys().next().value;
-    definitionCache.delete(firstKey);
+const cacheKey = (w) => `verbatim_dict_${w}`;
+const cacheIndexKey = 'verbatim_cache_index';
+
+function readCache(word) {
+  try {
+    const raw = localStorage.getItem(cacheKey(word));
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (Date.now() - obj.ts > (obj.ttl || CACHE_TTL)) {
+      localStorage.removeItem(cacheKey(word));
+      return null;
+    }
+    return obj.meaning;
+  } catch (e) {
+    console.warn('Cache read failed:', e);
+    return null;
   }
-  definitionCache.set(key, value);
+}
+
+function writeCache(word, meaning, ttl = CACHE_TTL) {
+  try {
+    maintainCacheIndex(word);
+    localStorage.setItem(
+      cacheKey(word),
+      JSON.stringify({ meaning, ts: Date.now(), ttl })
+    );
+  } catch (e) {
+    console.warn('Cache write failed:', e);
+  }
+}
+
+function maintainCacheIndex(word) {
+  try {
+    const rawIdx = localStorage.getItem(cacheIndexKey);
+    let idx = rawIdx ? JSON.parse(rawIdx) : [];
+    idx = idx.filter((k) => k !== word);
+    idx.unshift(word);
+    if (idx.length > MAX_CACHE_ITEMS) {
+      const toDrop = idx.splice(MAX_CACHE_ITEMS);
+      toDrop.forEach((k) => localStorage.removeItem(cacheKey(k)));
+    }
+    localStorage.setItem(cacheIndexKey, JSON.stringify(idx));
+  } catch (e) {}
 }
 
 function showPopup(x, y, text, duration = 6000) {
@@ -115,24 +154,30 @@ async function fetchDefinition(word) {
   if (!cleanedWord || cleanedWord.length < 2) {
     return 'No valid word selected';
   }
-  if (definitionCache.has(cleanedWord)) {
-    return definitionCache.get(cleanedWord);
+  
+  const cached = readCache(cleanedWord);
+  if (cached) {
+    console.log('Cache hit:', cleanedWord);
+    return cached;
   }
+  
+  console.log('Cache miss, fetching:', cleanedWord);
+  
   try {
     const response = await fetchWithTimeout(`https://api.dictionaryapi.dev/api/v2/entries/en/${cleanedWord}`, 7000);
     if (!response.ok) {
       const errorMsg = response.status === 404 ? 'No definition found' : 'Network error';
-      setCacheEntry(cleanedWord, errorMsg);
+      writeCache(cleanedWord, errorMsg, ERROR_TTL);
       return errorMsg;
     }
     const data = await response.json();
     const definition = data?.[0]?.meanings?.[0]?.definitions?.[0]?.definition || 'No definition found';
-    setCacheEntry(cleanedWord, definition);
+    writeCache(cleanedWord, definition, CACHE_TTL);
     return definition;
   } catch (error) {
     console.error('Definition fetch failed:', error);
     const errorMsg = 'Error fetching definition';
-    setCacheEntry(cleanedWord, errorMsg);
+    writeCache(cleanedWord, errorMsg, ERROR_TTL);
     return errorMsg;
   }
 }
@@ -233,6 +278,5 @@ if (isYouTube && overlayEnabled) {
   }
   
   setInterval(updateOverlay, 500);
-  console.log('YouTube overlay system active');
+  console.log('YouTube overlay with localStorage caching active');
 }
-
