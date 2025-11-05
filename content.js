@@ -19,34 +19,53 @@ chrome.runtime.onMessage.addListener((msg) => {
     console.log('Overlay toggled:', overlayEnabled);
     if (!overlayEnabled) {
       if (overlay) overlay.style.display = 'none';
-      hidePopup();
+      hideTooltip();
     }
   }
 });
 
-const popup = document.getElementById('verbatim-popup') || document.createElement('div');
-popup.id = 'verbatim-popup';
-Object.assign(popup.style, {
-  position: 'fixed',
-  background: 'rgba(0, 0, 0, 0.92)',
-  color: '#ffffff',
-  padding: '10px 14px',
-  borderRadius: '8px',
-  fontSize: '13px',
-  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif',
-  lineHeight: '1.5',
-  zIndex: '2147483647',
-  display: 'none',
-  maxWidth: '340px',
-  boxShadow: '0 6px 18px rgba(0, 0, 0, 0.4)',
-  border: '1px solid rgba(255, 255, 255, 0.15)',
-  wordWrap: 'break-word'
+const tooltip = document.createElement("div");
+tooltip.id = "verbatim-tooltip";
+Object.assign(tooltip.style, {
+  position: "fixed",
+  zIndex: 2147483640,
+  maxWidth: "420px",
+  background: "rgba(10,10,10,0.96)",
+  color: "#fff",
+  padding: "10px 14px",
+  borderRadius: "10px",
+  boxShadow: "0 6px 24px rgba(0,0,0,0.45)",
+  fontSize: "13px",
+  lineHeight: "1.4",
+  display: "none",
+  pointerEvents: "auto",
+  whiteSpace: "pre-wrap",
 });
-if (!document.getElementById('verbatim-popup')) {
-  document.body.appendChild(popup);
-}
 
-let popupTimer = null;
+const tooltipBody = document.createElement("div");
+tooltipBody.style.paddingRight = "26px";
+
+const tooltipClose = document.createElement("button");
+Object.assign(tooltipClose.style, {
+  position: "absolute",
+  right: "6px",
+  top: "6px",
+  background: "none",
+  border: "none",
+  color: "#fff",
+  fontSize: "16px",
+  cursor: "pointer",
+  lineHeight: "1",
+  padding: "4px",
+});
+tooltipClose.textContent = "×";
+tooltipClose.addEventListener("click", () => hideTooltip(), { passive: true });
+
+tooltip.appendChild(tooltipBody);
+tooltip.appendChild(tooltipClose);
+document.body.appendChild(tooltip);
+
+let tooltipTimer = null;
 
 const cacheKey = (w) => `verbatim_dict_${w}`;
 const cacheIndexKey = 'verbatim_cache_index';
@@ -60,19 +79,24 @@ function readCache(word) {
       localStorage.removeItem(cacheKey(word));
       return null;
     }
-    return obj.meaning;
+    return { meaning: obj.meaning, example: obj.example || null };
   } catch (e) {
     console.warn('Cache read failed:', e);
     return null;
   }
 }
 
-function writeCache(word, meaning, ttl = CACHE_TTL) {
+function writeCache(word, data, ttl = CACHE_TTL) {
   try {
     maintainCacheIndex(word);
     localStorage.setItem(
       cacheKey(word),
-      JSON.stringify({ meaning, ts: Date.now(), ttl })
+      JSON.stringify({ 
+        meaning: data.meaning, 
+        example: data.example,
+        ts: Date.now(), 
+        ttl 
+      })
     );
   } catch (e) {
     console.warn('Cache write failed:', e);
@@ -93,32 +117,58 @@ function maintainCacheIndex(word) {
   } catch (e) {}
 }
 
-function showPopup(x, y, text, duration = 6000) {
-  popup.textContent = text;
-  let left = x + 12;
-  if (left + 340 > window.innerWidth) left = x - 352;
-  let top = y + 12;
-  if (top + 100 > window.innerHeight) top = y - 112;
-  left = Math.max(8, left);
-  top = Math.max(8, top);
-  popup.style.left = left + 'px';
-  popup.style.top = top + 'px';
-  popup.style.display = 'block';
-  if (popupTimer) clearTimeout(popupTimer);
-  popupTimer = setTimeout(() => hidePopup(), duration);
+function showTooltipAt(clientX, clientY, titleText, bodyText, exampleText = null) {
+  tooltipBody.innerHTML = "";
+  
+  const title = document.createElement("div");
+  title.style.fontWeight = "700";
+  title.style.marginBottom = "6px";
+  title.textContent = titleText;
+  tooltipBody.appendChild(title);
+
+  const body = document.createElement("div");
+  body.textContent = bodyText;
+  tooltipBody.appendChild(body);
+
+  if (exampleText) {
+    const ex = document.createElement("div");
+    ex.style.marginTop = "8px";
+    ex.style.fontStyle = "italic";
+    ex.style.color = "#a0a0a0";
+    ex.textContent = `📘 Example: ${exampleText}`;
+    tooltipBody.appendChild(ex);
+  }
+
+  tooltip.style.display = "block";
+  
+  requestAnimationFrame(() => {
+    const tw = tooltip.offsetWidth;
+    const th = tooltip.offsetHeight;
+    const pad = 8;
+    let left = clientX + 10;
+    let top = clientY + 10;
+    
+    if (left + tw + pad > window.innerWidth)
+      left = Math.max(pad, window.innerWidth - tw - pad);
+    if (top + th + pad > window.innerHeight)
+      top = Math.max(pad, window.innerHeight - th - pad);
+    
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  });
 }
 
-function hidePopup() {
-  popup.style.display = 'none';
-  if (popupTimer) {
-    clearTimeout(popupTimer);
-    popupTimer = null;
+function hideTooltip() {
+  tooltip.style.display = "none";
+  if (tooltipTimer) {
+    clearTimeout(tooltipTimer);
+    tooltipTimer = null;
   }
 }
 
 document.addEventListener('click', function(event) {
-  if (event.target !== popup && !event.target.closest('#verbatim-overlay')) {
-    hidePopup();
+  if (event.target !== tooltip && !event.target.closest('#verbatim-overlay')) {
+    hideTooltip();
   }
 });
 
@@ -152,7 +202,7 @@ async function fetchWithTimeout(url, timeout = 7000) {
 async function fetchDefinition(word) {
   const cleanedWord = normalizeWord(word);
   if (!cleanedWord || cleanedWord.length < 2) {
-    return 'No valid word selected';
+    return { meaning: 'No valid word selected', example: null };
   }
   
   const cached = readCache(cleanedWord);
@@ -164,21 +214,37 @@ async function fetchDefinition(word) {
   console.log('Cache miss, fetching:', cleanedWord);
   
   try {
-    const response = await fetchWithTimeout(`https://api.dictionaryapi.dev/api/v2/entries/en/${cleanedWord}`, 7000);
+    const response = await fetchWithTimeout(
+      `https://api.dictionaryapi.dev/api/v2/entries/en/${cleanedWord}`, 
+      7000
+    );
+    
     if (!response.ok) {
-      const errorMsg = response.status === 404 ? 'No definition found' : 'Network error';
-      writeCache(cleanedWord, errorMsg, ERROR_TTL);
-      return errorMsg;
+      const result = { 
+        meaning: response.status === 404 ? 'No definition found' : 'Network error',
+        example: null 
+      };
+      writeCache(cleanedWord, result, ERROR_TTL);
+      return result;
     }
+    
     const data = await response.json();
-    const definition = data?.[0]?.meanings?.[0]?.definitions?.[0]?.definition || 'No definition found';
-    writeCache(cleanedWord, definition, CACHE_TTL);
-    return definition;
+    const def = data?.[0]?.meanings?.[0]?.definitions?.[0];
+    const result = {
+      meaning: def?.definition || 'No definition found',
+      example: def?.example || null
+    };
+    
+    writeCache(cleanedWord, result, CACHE_TTL);
+    return result;
   } catch (error) {
     console.error('Definition fetch failed:', error);
-    const errorMsg = 'Error fetching definition';
-    writeCache(cleanedWord, errorMsg, ERROR_TTL);
-    return errorMsg;
+    const result = { 
+      meaning: 'Error fetching definition',
+      example: null 
+    };
+    writeCache(cleanedWord, result, ERROR_TTL);
+    return result;
   }
 }
 
@@ -188,10 +254,10 @@ document.addEventListener('dblclick', async function(event) {
   if (selectedText && !lookupInProgress) {
     lookupInProgress = true;
     const word = normalizeWord(selectedText);
-    showPopup(event.clientX, event.clientY, 'Loading...', 15000);
+    showTooltipAt(event.clientX, event.clientY, word, 'Loading...');
     try {
-      const definition = await fetchDefinition(selectedText);
-      showPopup(event.clientX, event.clientY, `${word}: ${definition}`, 6000);
+      const result = await fetchDefinition(selectedText);
+      showTooltipAt(event.clientX, event.clientY, word, result.meaning, result.example);
     } finally {
       lookupInProgress = false;
     }
@@ -225,10 +291,10 @@ if (isYouTube && overlayEnabled) {
         const word = normalizeWord(rawWord);
         if (word) {
           lookupInProgress = true;
-          showPopup(event.clientX, event.clientY, 'Loading...', 15000);
+          showTooltipAt(event.clientX, event.clientY, word, 'Loading...');
           try {
-            const definition = await fetchDefinition(rawWord);
-            showPopup(event.clientX, event.clientY, `${word}: ${definition}`, 6000);
+            const result = await fetchDefinition(rawWord);
+            showTooltipAt(event.clientX, event.clientY, word, result.meaning, result.example);
           } finally {
             lookupInProgress = false;
           }
@@ -278,5 +344,6 @@ if (isYouTube && overlayEnabled) {
   }
   
   setInterval(updateOverlay, 500);
-  console.log('YouTube overlay with localStorage caching active');
+  console.log('YouTube overlay with enhanced tooltip active');
 }
+
