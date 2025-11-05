@@ -3,10 +3,13 @@ let lookupInProgress = false;
 let overlay = null;
 let lastCaptionText = '';
 let overlayEnabled = true;
+let mutationObserver = null;
+let rebuildTimer = null;
 
-const CACHE_TTL = 1000 * 60 * 60 * 24; 
-const ERROR_TTL = 1000 * 60 * 5; 
+const CACHE_TTL = 1000 * 60 * 60 * 24;
+const ERROR_TTL = 1000 * 60 * 5;
 const MAX_CACHE_ITEMS = 500;
+const REBUILD_DEBOUNCE_MS = 100;
 
 chrome.storage.sync.get(['enabled'], (result) => {
   overlayEnabled = result.enabled !== false;
@@ -20,6 +23,8 @@ chrome.runtime.onMessage.addListener((msg) => {
     if (!overlayEnabled) {
       if (overlay) overlay.style.display = 'none';
       hideTooltip();
+    } else if (isYouTube) {
+      startObserver();
     }
   }
 });
@@ -81,7 +86,6 @@ function readCache(word) {
     }
     return { meaning: obj.meaning, example: obj.example || null };
   } catch (e) {
-    console.warn('Cache read failed:', e);
     return null;
   }
 }
@@ -98,9 +102,7 @@ function writeCache(word, data, ttl = CACHE_TTL) {
         ttl 
       })
     );
-  } catch (e) {
-    console.warn('Cache write failed:', e);
-  }
+  } catch (e) {}
 }
 
 function maintainCacheIndex(word) {
@@ -135,7 +137,7 @@ function showTooltipAt(clientX, clientY, titleText, bodyText, exampleText = null
     ex.style.marginTop = "8px";
     ex.style.fontStyle = "italic";
     ex.style.color = "#a0a0a0";
-    ex.textContent = `📘 Example: ${exampleText}`;
+    ex.textContent = `Example: ${exampleText}`;
     tooltipBody.appendChild(ex);
   }
 
@@ -206,12 +208,7 @@ async function fetchDefinition(word) {
   }
   
   const cached = readCache(cleanedWord);
-  if (cached) {
-    console.log('Cache hit:', cleanedWord);
-    return cached;
-  }
-  
-  console.log('Cache miss, fetching:', cleanedWord);
+  if (cached) return cached;
   
   try {
     const response = await fetchWithTimeout(
@@ -238,7 +235,6 @@ async function fetchDefinition(word) {
     writeCache(cleanedWord, result, CACHE_TTL);
     return result;
   } catch (error) {
-    console.error('Definition fetch failed:', error);
     const result = { 
       meaning: 'Error fetching definition',
       example: null 
@@ -264,7 +260,7 @@ document.addEventListener('dblclick', async function(event) {
   }
 });
 
-if (isYouTube && overlayEnabled) {
+if (isYouTube) {
   function createOverlay() {
     if (overlay) return overlay;
     
@@ -343,7 +339,53 @@ if (isYouTube && overlayEnabled) {
     ).join(' ');
   }
   
-  setInterval(updateOverlay, 500);
-  console.log('YouTube overlay with enhanced tooltip active');
+  function scheduleRebuild() {
+    if (rebuildTimer) clearTimeout(rebuildTimer);
+    rebuildTimer = setTimeout(updateOverlay, REBUILD_DEBOUNCE_MS);
+  }
+  
+  function startObserver() {
+    function findAndObserve() {
+      const container = document.querySelector('.ytp-caption-window-container');
+      if (!container) {
+        return requestAnimationFrame(findAndObserve);
+      }
+      
+      if (mutationObserver) mutationObserver.disconnect();
+      
+      mutationObserver = new MutationObserver(scheduleRebuild);
+      mutationObserver.observe(container, {
+        childList: true,
+        subtree: true,
+        characterData: true
+      });
+      
+      scheduleRebuild();
+      console.log('MutationObserver attached to caption container');
+    }
+    findAndObserve();
+  }
+  
+  if (overlayEnabled) {
+    startObserver();
+  }
 }
+
+function cleanup() {
+  if (mutationObserver) {
+    mutationObserver.disconnect();
+    mutationObserver = null;
+  }
+  if (rebuildTimer) {
+    clearTimeout(rebuildTimer);
+    rebuildTimer = null;
+  }
+  if (overlay && overlay.parentNode) {
+    overlay.parentNode.removeChild(overlay);
+    overlay = null;
+  }
+  lastCaptionText = '';
+}
+
+window.addEventListener('beforeunload', cleanup);
 
