@@ -1,4 +1,3 @@
-
 const isYouTube = window.location.hostname.includes('youtube.com');
 let lookupInProgress = false;
 let overlay = null;
@@ -11,15 +10,15 @@ Object.assign(popup.style, {
   background: 'rgba(0, 0, 0, 0.92)',
   color: '#ffffff',
   padding: '10px 14px',
-  borderRadius: '6px',
+  borderRadius: '8px',
   fontSize: '13px',
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif',
-  lineHeight: '1.4',
+  lineHeight: '1.5',
   zIndex: '2147483647',
   display: 'none',
-  maxWidth: '320px',
-  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.35)',
-  border: '1px solid rgba(255, 255, 255, 0.1)',
+  maxWidth: '340px',
+  boxShadow: '0 6px 18px rgba(0, 0, 0, 0.4)',
+  border: '1px solid rgba(255, 255, 255, 0.15)',
   wordWrap: 'break-word'
 });
 if (!document.getElementById('verbatim-popup')) {
@@ -41,7 +40,7 @@ function setCacheEntry(key, value) {
 function showPopup(x, y, text, duration = 6000) {
   popup.textContent = text;
   let left = x + 12;
-  if (left + 320 > window.innerWidth) left = x - 332;
+  if (left + 340 > window.innerWidth) left = x - 352;
   let top = y + 12;
   if (top + 100 > window.innerHeight) top = y - 112;
   left = Math.max(8, left);
@@ -67,17 +66,20 @@ document.addEventListener('click', function(event) {
   }
 });
 
-function cleanWord(text) {
-  if (!text) return '';
-  let word = text.trim();
-  if (word.includes(' ')) word = word.split(' ')[0];
-  word = word.toLowerCase();
-  word = word.replace(/^[^a-z''-]+|[^a-z''-]+$/gi, '');
-  word = word.replace(/[\u2018\u2019\u201B\u2032]/g, "'");
-  return word.length > 0 && word.length < 50 ? word : '';
+function normalizeWord(raw) {
+  if (!raw) return '';
+  let w = raw.trim().replace(/\s+/g, ' ');
+  if (w.includes(' ')) w = w.split(' ')[0];
+  try {
+    w = w.replace(/^[^\p{L}\p{N}''\-]+|[^\p{L}\p{N}''\-]+$/gu, '');
+  } catch {
+    w = w.replace(/^[^A-Za-z0-9''-]+|[^A-Za-z0-9''-]+$/g, '');
+  }
+  w = w.replace(/[\u2018\u2019\u201B\u2032]/g, "'");
+  return w.length === 0 || w.length > 64 ? '' : w.toLowerCase();
 }
 
-async function fetchWithTimeout(url, timeout = 5000) {
+async function fetchWithTimeout(url, timeout = 7000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
   try {
@@ -91,56 +93,48 @@ async function fetchWithTimeout(url, timeout = 5000) {
   }
 }
 
-async function lookupWord(word) {
-  const cleanedWord = cleanWord(word);
+async function fetchDefinition(word) {
+  const cleanedWord = normalizeWord(word);
   if (!cleanedWord || cleanedWord.length < 2) {
-    return 'Please select a valid word';
+    return 'No valid word selected';
   }
   if (definitionCache.has(cleanedWord)) {
     return definitionCache.get(cleanedWord);
   }
   try {
-    const response = await fetchWithTimeout(`https://api.dictionaryapi.dev/api/v2/entries/en/${cleanedWord}`, 5000);
+    const response = await fetchWithTimeout(`https://api.dictionaryapi.dev/api/v2/entries/en/${cleanedWord}`, 7000);
     if (!response.ok) {
-      const errorMsg = response.status === 404 ? `"${cleanedWord}" not found` : 'Network error';
+      const errorMsg = response.status === 404 ? 'No definition found' : 'Network error';
       setCacheEntry(cleanedWord, errorMsg);
       return errorMsg;
     }
     const data = await response.json();
-    const definition = data?.[0]?.meanings?.[0]?.definitions?.[0]?.definition || 'No definition available';
+    const definition = data?.[0]?.meanings?.[0]?.definitions?.[0]?.definition || 'No definition found';
     setCacheEntry(cleanedWord, definition);
     return definition;
   } catch (error) {
-    const errorMsg = error.message === 'Request timeout' ? 'Request timed out' : 'Network error';
+    console.error('Definition fetch failed:', error);
+    const errorMsg = 'Error fetching definition';
     setCacheEntry(cleanedWord, errorMsg);
     return errorMsg;
   }
 }
 
-async function handleWordLookup(x, y, word) {
-  if (lookupInProgress) return;
-  lookupInProgress = true;
-  const cleanedWord = cleanWord(word);
-  showPopup(x, y, 'Loading...', 12000);
-  try {
-    const definition = await lookupWord(word);
-    showPopup(x, y, `${cleanedWord}: ${definition}`, 6000);
-  } finally {
-    lookupInProgress = false;
-  }
-}
-
 document.addEventListener('dblclick', async function(event) {
   const selectedText = window.getSelection().toString().trim();
-  if (selectedText) {
-    await handleWordLookup(event.clientX, event.clientY, selectedText);
+  if (selectedText && !lookupInProgress) {
+    lookupInProgress = true;
+    const word = normalizeWord(selectedText);
+    showPopup(event.clientX, event.clientY, 'Loading...', 15000);
+    try {
+      const definition = await fetchDefinition(selectedText);
+      showPopup(event.clientX, event.clientY, `${word}: ${definition}`, 6000);
+    } finally {
+      lookupInProgress = false;
+    }
   }
 });
-
-// Optimized YouTube overlay
 if (isYouTube) {
-  console.log('YouTube overlay with optimized updates');
-  
   function createOverlay() {
     if (overlay) return overlay;
     
@@ -155,14 +149,27 @@ if (isYouTube) {
       color: 'transparent',
       background: 'transparent',
       whiteSpace: 'pre-wrap',
-      textAlign: 'center'
+      textAlign: 'center',
+      fontFamily: 'inherit'
     });
     
     overlay.addEventListener('click', async (event) => {
       const wordSpan = event.target.closest('span[data-word]');
-      if (wordSpan) {
+      if (wordSpan && !lookupInProgress) {
         const rawWord = wordSpan.dataset.word;
-        await handleWordLookup(event.clientX, event.clientY, rawWord);
+        const word = normalizeWord(rawWord);
+        if (word) {
+          lookupInProgress = true;
+          const x = event.clientX;
+          const y = event.clientY;
+          showPopup(x, y, 'Loading...', 15000);
+          try {
+            const definition = await fetchDefinition(rawWord);
+            showPopup(x, y, `${word}: ${definition}`, 6000);
+          } finally {
+            lookupInProgress = false;
+          }
+        }
       }
     });
     
@@ -180,7 +187,6 @@ if (isYouTube) {
     }
     
     const captionText = caption.textContent;
-    
     if (captionText === lastCaptionText) {
       return;
     }
@@ -202,10 +208,11 @@ if (isYouTube) {
     
     const words = captionText.split(/\s+/).filter(w => w.trim());
     overlay.innerHTML = words.map(word => 
-      `<span data-word="${word}" style="margin-right: 4px;">${word}</span>`
+      `<span data-word="${word}" style="color: transparent; margin-right: 4px;">${word}</span>`
     ).join(' ');
   }
   
   setInterval(updateOverlay, 500);
-  console.log('Optimized overlay active');
+  console.log('YouTube overlay system active');
 }
+
