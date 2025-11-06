@@ -4,6 +4,7 @@ let overlayContainer = null;
 let lastCaptionSnapshot = '';
 let overlayEnabled = true;
 let mutationObserver = null;
+let resizeObserver = null;
 let rebuildTimer = null;
 
 const MIN_HITBOX_WIDTH = 20;
@@ -143,7 +144,7 @@ function showTooltipAt(clientX, clientY, titleText, bodyText, exampleText = null
     ex.style.marginTop = "8px";
     ex.style.fontStyle = "italic";
     ex.style.color = "#a0a0a0";
-    ex.textContent = `Example: ${exampleText}`;
+    ex.textContent = `📘 Example: ${exampleText}`;
     tooltipBody.appendChild(ex);
   }
 
@@ -384,6 +385,7 @@ function startObservers() {
     if (!container) return requestAnimationFrame(findAndObserve);
     
     if (mutationObserver) mutationObserver.disconnect();
+    if (resizeObserver) resizeObserver.disconnect?.();
     
     mutationObserver = new MutationObserver(scheduleRebuild);
     mutationObserver.observe(container, {
@@ -391,9 +393,16 @@ function startObservers() {
       subtree: true,
       characterData: true
     });
+    try {
+      resizeObserver = new ResizeObserver(scheduleRebuild);
+      resizeObserver.observe(container);
+      console.log('ResizeObserver attached');
+    } catch (e) {
+      console.warn('ResizeObserver not supported:', e);
+    }
     
     scheduleRebuild();
-    console.log('MutationObserver attached with hitbox system');
+    console.log('MutationObserver and ResizeObserver active');
   }
   findAndObserve();
 }
@@ -402,6 +411,10 @@ function cleanup() {
   if (mutationObserver) {
     mutationObserver.disconnect();
     mutationObserver = null;
+  }
+  if (resizeObserver) {
+    resizeObserver.disconnect?.();
+    resizeObserver = null;
   }
   if (rebuildTimer) {
     clearTimeout(rebuildTimer);
