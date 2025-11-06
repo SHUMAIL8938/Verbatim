@@ -1,30 +1,38 @@
 const isYouTube = window.location.hostname.includes('youtube.com');
 let lookupInProgress = false;
-let overlay = null;
-let lastCaptionText = '';
+let overlayContainer = null;
+let lastCaptionSnapshot = '';
 let overlayEnabled = true;
 let mutationObserver = null;
 let rebuildTimer = null;
 
+const MIN_HITBOX_WIDTH = 20;
+const MIN_HITBOX_HEIGHT = 18;
+const HITBOX_PAD_X = 6;
+const HITBOX_PAD_Y = 4;
 const CACHE_TTL = 1000 * 60 * 60 * 24;
 const ERROR_TTL = 1000 * 60 * 5;
-const MAX_CACHE_ITEMS = 500;
-const REBUILD_DEBOUNCE_MS = 100;
+const MAX_CACHE_ITEMS = 800;
+const REBUILD_DEBOUNCE_MS = 80;
 
 chrome.storage.sync.get(['enabled'], (result) => {
   overlayEnabled = result.enabled !== false;
   console.log('Overlay enabled:', overlayEnabled);
+  if (overlayEnabled && isYouTube) {
+    startObservers();
+  }
 });
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.action === 'TOGGLE_OVERLAY') {
     overlayEnabled = msg.enabled;
     console.log('Overlay toggled:', overlayEnabled);
-    if (!overlayEnabled) {
-      if (overlay) overlay.style.display = 'none';
-      hideTooltip();
-    } else if (isYouTube) {
-      startObserver();
+    if (overlayEnabled && isYouTube) {
+      ensureOverlayContainer();
+      startObservers();
+      scheduleRebuild();
+    } else {
+      cleanup();
     }
   }
 });
@@ -69,8 +77,6 @@ tooltipClose.addEventListener("click", () => hideTooltip(), { passive: true });
 tooltip.appendChild(tooltipBody);
 tooltip.appendChild(tooltipClose);
 document.body.appendChild(tooltip);
-
-let tooltipTimer = null;
 
 const cacheKey = (w) => `verbatim_dict_${w}`;
 const cacheIndexKey = 'verbatim_cache_index';
@@ -162,17 +168,7 @@ function showTooltipAt(clientX, clientY, titleText, bodyText, exampleText = null
 
 function hideTooltip() {
   tooltip.style.display = "none";
-  if (tooltipTimer) {
-    clearTimeout(tooltipTimer);
-    tooltipTimer = null;
-  }
 }
-
-document.addEventListener('click', function(event) {
-  if (event.target !== tooltip && !event.target.closest('#verbatim-overlay')) {
-    hideTooltip();
-  }
-});
 
 function normalizeWord(raw) {
   if (!raw) return '';
@@ -260,115 +256,146 @@ document.addEventListener('dblclick', async function(event) {
   }
 });
 
-if (isYouTube) {
-  function createOverlay() {
-    if (overlay) return overlay;
+function ensureOverlayContainer() {
+  if (overlayContainer) return overlayContainer;
+  
+  overlayContainer = document.createElement("div");
+  overlayContainer.id = "verbatim-overlay-container";
+  Object.assign(overlayContainer.style, {
+    position: "fixed",
+    left: "0",
+    top: "0",
+    width: "100%",
+    height: "100%",
+    pointerEvents: "none",
+    zIndex: 2147483639,
+  });
+  document.documentElement.appendChild(overlayContainer);
+  
+  overlayContainer.addEventListener("click", async (ev) => {
+    const span = ev.target.closest("span[data-word-normalized]");
+    if (!span) return;
+    ev.stopPropagation();
     
-    overlay = document.createElement('div');
-    overlay.id = 'verbatim-overlay';
-    Object.assign(overlay.style, {
-      position: 'fixed',
-      zIndex: '2147483646',
-      pointerEvents: 'auto',
-      cursor: 'pointer',
-      display: 'none',
-      color: 'transparent',
-      background: 'transparent',
-      whiteSpace: 'pre-wrap',
-      textAlign: 'center',
-      fontFamily: 'inherit'
-    });
+    const raw = span.dataset.word || span.textContent || "";
+    const normalized = span.dataset.wordNormalized || normalizeWord(raw);
+    if (!normalized) return;
     
-    overlay.addEventListener('click', async (event) => {
-      if (!overlayEnabled) return;
-      const wordSpan = event.target.closest('span[data-word]');
-      if (wordSpan && !lookupInProgress) {
-        const rawWord = wordSpan.dataset.word;
-        const word = normalizeWord(rawWord);
-        if (word) {
-          lookupInProgress = true;
-          showTooltipAt(event.clientX, event.clientY, word, 'Loading...');
-          try {
-            const result = await fetchDefinition(rawWord);
-            showTooltipAt(event.clientX, event.clientY, word, result.meaning, result.example);
-          } finally {
-            lookupInProgress = false;
-          }
+    const rect = span.getBoundingClientRect();
+    const x = ev.clientX;
+    const y = rect.bottom + window.scrollY;
+    
+    showTooltipAt(x, y, normalized, "Loading...");
+    const res = await fetchDefinition(normalized);
+    showTooltipAt(x, y, normalized, res.meaning, res.example);
+  }, true);
+  
+  return overlayContainer;
+}
+
+function buildOverlayForCaptionElement(captionEl, fragment) {
+  if (!captionEl || !fragment) return;
+  
+  const walker = document.createTreeWalker(captionEl, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+  textNodes.forEach((node) => {
+    const text = node.nodeValue;
+    const tokens = text.split(/(\s+)/);
+    let offset = 0;
+    
+    for (const token of tokens) {
+      if (!token || /\s+/.test(token)) {
+        offset += token.length;
+        continue;
+      }
+      
+      try {
+        const range = document.createRange();
+        range.setStart(node, offset);
+        range.setEnd(node, offset + token.length);
+        const rects = range.getClientRects();
+        
+        for (let i = 0; i < rects.length; i++) {
+          const r = rects[i];
+          if (r.width <= 0 || r.height <= 0) continue;
+          
+          const ov = document.createElement("span");
+          const rawWord = token;
+          const normalized = normalizeWord(rawWord);
+          ov.dataset.word = rawWord;
+          ov.dataset.wordNormalized = normalized;
+          
+          Object.assign(ov.style, {
+            position: "fixed",
+            left: `${r.left - HITBOX_PAD_X}px`,
+            top: `${r.top - HITBOX_PAD_Y}px`,
+            width: `${Math.max(r.width + HITBOX_PAD_X * 2, MIN_HITBOX_WIDTH)}px`,
+            height: `${Math.max(r.height + HITBOX_PAD_Y * 2, MIN_HITBOX_HEIGHT)}px`,
+            display: "inline-block",
+            pointerEvents: "auto",
+            background: "transparent",
+            borderRadius: "4px",
+            cursor: "pointer",
+          });
+          
+          fragment.appendChild(ov);
         }
-      }
+      } catch (e) {}
+      offset += token.length;
+    }
+  });
+}
+
+function rebuildOverlays() {
+  if (!overlayEnabled) return;
+  ensureOverlayContainer();
+  
+  const captionSegs = Array.from(
+    document.querySelectorAll(".ytp-caption-segment, .caption-window *")
+  );
+  
+  if (captionSegs.length === 0) {
+    overlayContainer.innerHTML = "";
+    lastCaptionSnapshot = "";
+    return;
+  }
+  
+  const snapshot = captionSegs.map((el) => el.textContent).join("\n");
+  if (snapshot === lastCaptionSnapshot) return;
+  lastCaptionSnapshot = snapshot;
+
+  const frag = document.createDocumentFragment();
+  captionSegs.forEach((seg) => buildOverlayForCaptionElement(seg, frag));
+  overlayContainer.innerHTML = "";
+  overlayContainer.appendChild(frag);
+}
+
+function scheduleRebuild() {
+  if (rebuildTimer) clearTimeout(rebuildTimer);
+  rebuildTimer = setTimeout(rebuildOverlays, REBUILD_DEBOUNCE_MS);
+}
+
+function startObservers() {
+  function findAndObserve() {
+    const container = document.querySelector('.ytp-caption-window-container') ||
+                      document.querySelector('.caption-window, .captions-text');
+    if (!container) return requestAnimationFrame(findAndObserve);
+    
+    if (mutationObserver) mutationObserver.disconnect();
+    
+    mutationObserver = new MutationObserver(scheduleRebuild);
+    mutationObserver.observe(container, {
+      childList: true,
+      subtree: true,
+      characterData: true
     });
     
-    document.body.appendChild(overlay);
-    return overlay;
+    scheduleRebuild();
+    console.log('MutationObserver attached with hitbox system');
   }
-  
-  function updateOverlay() {
-    if (!overlayEnabled) {
-      if (overlay) overlay.style.display = 'none';
-      return;
-    }
-    
-    const caption = document.querySelector('.ytp-caption-segment');
-    
-    if (!caption || !caption.textContent.trim()) {
-      if (overlay) overlay.style.display = 'none';
-      lastCaptionText = '';
-      return;
-    }
-    
-    const captionText = caption.textContent;
-    if (captionText === lastCaptionText) return;
-    lastCaptionText = captionText;
-    
-    if (!overlay) createOverlay();
-    
-    const rect = caption.getBoundingClientRect();
-    const computedStyle = window.getComputedStyle(caption);
-    
-    overlay.style.display = 'block';
-    overlay.style.left = rect.left + 'px';
-    overlay.style.top = rect.top + 'px';
-    overlay.style.width = rect.width + 'px';
-    overlay.style.height = rect.height + 'px';
-    overlay.style.fontSize = computedStyle.fontSize;
-    overlay.style.fontFamily = computedStyle.fontFamily;
-    
-    const words = captionText.split(/\s+/).filter(w => w.trim());
-    overlay.innerHTML = words.map(word => 
-      `<span data-word="${word}" style="color: transparent; margin-right: 4px;">${word}</span>`
-    ).join(' ');
-  }
-  
-  function scheduleRebuild() {
-    if (rebuildTimer) clearTimeout(rebuildTimer);
-    rebuildTimer = setTimeout(updateOverlay, REBUILD_DEBOUNCE_MS);
-  }
-  
-  function startObserver() {
-    function findAndObserve() {
-      const container = document.querySelector('.ytp-caption-window-container');
-      if (!container) {
-        return requestAnimationFrame(findAndObserve);
-      }
-      
-      if (mutationObserver) mutationObserver.disconnect();
-      
-      mutationObserver = new MutationObserver(scheduleRebuild);
-      mutationObserver.observe(container, {
-        childList: true,
-        subtree: true,
-        characterData: true
-      });
-      
-      scheduleRebuild();
-      console.log('MutationObserver attached to caption container');
-    }
-    findAndObserve();
-  }
-  
-  if (overlayEnabled) {
-    startObserver();
-  }
+  findAndObserve();
 }
 
 function cleanup() {
@@ -380,12 +407,15 @@ function cleanup() {
     clearTimeout(rebuildTimer);
     rebuildTimer = null;
   }
-  if (overlay && overlay.parentNode) {
-    overlay.parentNode.removeChild(overlay);
-    overlay = null;
+  if (overlayContainer) {
+    overlayContainer.remove();
+    overlayContainer = null;
   }
-  lastCaptionText = '';
+  lastCaptionSnapshot = '';
 }
 
 window.addEventListener('beforeunload', cleanup);
 
+if (isYouTube && overlayEnabled) {
+  startObservers();
+}
