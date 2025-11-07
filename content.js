@@ -6,6 +6,7 @@ let overlayEnabled = true;
 let mutationObserver = null;
 let resizeObserver = null;
 let rebuildTimer = null;
+let pollIntervalId = null;
 
 const MIN_HITBOX_WIDTH = 20;
 const MIN_HITBOX_HEIGHT = 18;
@@ -13,8 +14,9 @@ const HITBOX_PAD_X = 6;
 const HITBOX_PAD_Y = 4;
 const CACHE_TTL = 1000 * 60 * 60 * 24;
 const ERROR_TTL = 1000 * 60 * 5;
-const MAX_CACHE_ITEMS = 800;
+const MAX_CACHE_ITEMS = 1000;
 const REBUILD_DEBOUNCE_MS = 80;
+const POLL_POSITION_MS = 350; 
 
 chrome.storage.sync.get(['enabled'], (result) => {
   overlayEnabled = result.enabled !== false;
@@ -393,18 +395,25 @@ function startObservers() {
       subtree: true,
       characterData: true
     });
+    
     try {
       resizeObserver = new ResizeObserver(scheduleRebuild);
       resizeObserver.observe(container);
-      console.log('ResizeObserver attached');
     } catch (e) {
       console.warn('ResizeObserver not supported:', e);
     }
     
     scheduleRebuild();
-    console.log('MutationObserver and ResizeObserver active');
   }
   findAndObserve();
+  if (pollIntervalId) clearInterval(pollIntervalId);
+  pollIntervalId = setInterval(() => {
+    if (document.querySelector(".ytp-caption-segment")) {
+      scheduleRebuild();
+    }
+  }, POLL_POSITION_MS);
+  
+  console.log('MutationObserver, ResizeObserver, and polling active');
 }
 
 function cleanup() {
@@ -415,6 +424,10 @@ function cleanup() {
   if (resizeObserver) {
     resizeObserver.disconnect?.();
     resizeObserver = null;
+  }
+  if (pollIntervalId) {
+    clearInterval(pollIntervalId);
+    pollIntervalId = null;
   }
   if (rebuildTimer) {
     clearTimeout(rebuildTimer);
