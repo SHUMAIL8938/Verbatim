@@ -16,7 +16,8 @@ const CACHE_TTL = 1000 * 60 * 60 * 24;
 const ERROR_TTL = 1000 * 60 * 5;
 const MAX_CACHE_ITEMS = 1000;
 const REBUILD_DEBOUNCE_MS = 80;
-const POLL_POSITION_MS = 350; 
+const POLL_POSITION_MS = 350;
+const DICT_API = "https://api.dictionaryapi.dev/api/v2/entries/en/";
 
 chrome.storage.sync.get(['enabled'], (result) => {
   overlayEnabled = result.enabled !== false;
@@ -93,25 +94,23 @@ function readCache(word) {
       localStorage.removeItem(cacheKey(word));
       return null;
     }
-    return { meaning: obj.meaning, example: obj.example || null };
+    return obj;
   } catch (e) {
+    console.warn("cache read fail", e);
     return null;
   }
 }
 
-function writeCache(word, data, ttl = CACHE_TTL) {
+function writeCache(word, payload, ttl = CACHE_TTL) {
   try {
     maintainCacheIndex(word);
     localStorage.setItem(
       cacheKey(word),
-      JSON.stringify({ 
-        meaning: data.meaning, 
-        example: data.example,
-        ts: Date.now(), 
-        ttl 
-      })
+      JSON.stringify({ ...payload, ts: Date.now(), ttl })
     );
-  } catch (e) {}
+  } catch (e) {
+    console.warn("cache write fail", e);
+  }
 }
 
 function maintainCacheIndex(word) {
@@ -183,64 +182,102 @@ function normalizeWord(raw) {
     w = w.replace(/^[^A-Za-z0-9''-]+|[^A-Za-z0-9''-]+$/g, '');
   }
   w = w.replace(/[\u2018\u2019\u201B\u2032]/g, "'");
-  return w.length === 0 || w.length > 64 ? '' : w.toLowerCase();
+  w = w.toLowerCase();
+  return w.length === 0 || w.length > 64 ? '' : w;
 }
 
-async function fetchWithTimeout(url, timeout = 7000) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') throw new Error('Request timeout');
-    throw error;
-  }
-}
-
-async function fetchDefinition(word) {
+async function fetchDefinition(word, { maxRetries = 2, timeout = 7000, force = false } = {}) {
   const cleanedWord = normalizeWord(word);
   if (!cleanedWord || cleanedWord.length < 2) {
-    return { meaning: 'No valid word selected', example: null };
+    return { 
+      ok: false, 
+      meaning: 'No valid word selected', 
+      example: null,
+      errorType: 'invalid'
+    };
   }
   
-  const cached = readCache(cleanedWord);
-  if (cached) return cached;
-  
-  try {
-    const response = await fetchWithTimeout(
-      `https://api.dictionaryapi.dev/api/v2/entries/en/${cleanedWord}`, 
-      7000
-    );
-    
-    if (!response.ok) {
-      const result = { 
-        meaning: response.status === 404 ? 'No definition found' : 'Network error',
-        example: null 
+  if (!force) {
+    const cached = readCache(cleanedWord);
+    if (cached) {
+      return {
+        ok: cached.ok !== false,
+        meaning: cached.meaning,
+        example: cached.example || null,
+        errorType: cached.errorType || null
       };
-      writeCache(cleanedWord, result, ERROR_TTL);
-      return result;
     }
-    
-    const data = await response.json();
-    const def = data?.[0]?.meanings?.[0]?.definitions?.[0];
-    const result = {
-      meaning: def?.definition || 'No definition found',
-      example: def?.example || null
-    };
-    
-    writeCache(cleanedWord, result, CACHE_TTL);
-    return result;
-  } catch (error) {
-    const result = { 
-      meaning: 'Error fetching definition',
-      example: null 
-    };
-    writeCache(cleanedWord, result, ERROR_TTL);
-    return result;
   }
+  
+  let attempt = 0;
+  let lastErr = null;
+  
+  while (attempt <= maxRetries) {
+    attempt++;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      
+      const response = await fetch(
+        DICT_API + encodeURIComponent(cleanedWord),
+        { signal: controller.signal }
+      );
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        lastErr = { type: "http", status: response.status };
+        
+        if (response.status === 404) {
+          const payload = { 
+            ok: false, 
+            meaning: 'No definition found', 
+            example: null,
+            errorType: 'not_found'
+          };
+          writeCache(cleanedWord, payload, ERROR_TTL);
+          return payload;
+        }
+        
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const data = await response.json().catch(() => {
+        throw new Error("Parse error");
+      });
+      
+      const def = data?.[0]?.meanings?.[0]?.definitions?.[0];
+      const payload = {
+        ok: true,
+        meaning: def?.definition || 'No definition found',
+        example: def?.example || null
+      };
+      
+      writeCache(cleanedWord, payload, CACHE_TTL);
+      return payload;
+      
+    } catch (error) {
+      lastErr = lastErr || {
+        type: error.name === 'AbortError' ? 'timeout' : 'network',
+        err: error.message
+      };
+      
+      if (attempt <= maxRetries) {
+        const wait = 200 * Math.pow(2, attempt - 1);
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
+    }
+  }
+  
+  const fallbackPayload = {
+    ok: false,
+    meaning: 'Error fetching definition. Click × and try again.',
+    example: null,
+    errorType: lastErr?.type || 'network'
+  };
+  
+  writeCache(cleanedWord, fallbackPayload, ERROR_TTL);
+  return fallbackPayload;
 }
 
 document.addEventListener('dblclick', async function(event) {
@@ -406,6 +443,7 @@ function startObservers() {
     scheduleRebuild();
   }
   findAndObserve();
+  
   if (pollIntervalId) clearInterval(pollIntervalId);
   pollIntervalId = setInterval(() => {
     if (document.querySelector(".ytp-caption-segment")) {
@@ -413,35 +451,29 @@ function startObservers() {
     }
   }, POLL_POSITION_MS);
   
-  console.log('MutationObserver, ResizeObserver, and polling active');
+  console.log('Observers with retry logic active');
 }
 
 function cleanup() {
-  if (mutationObserver) {
-    mutationObserver.disconnect();
-    mutationObserver = null;
-  }
-  if (resizeObserver) {
-    resizeObserver.disconnect?.();
-    resizeObserver = null;
-  }
-  if (pollIntervalId) {
+  try {
+    mutationObserver?.disconnect();
+    resizeObserver?.disconnect?.();
     clearInterval(pollIntervalId);
+    overlayContainer?.remove();
+    tooltip?.remove();
+    mutationObserver = null;
+    resizeObserver = null;
     pollIntervalId = null;
-  }
-  if (rebuildTimer) {
-    clearTimeout(rebuildTimer);
-    rebuildTimer = null;
-  }
-  if (overlayContainer) {
-    overlayContainer.remove();
     overlayContainer = null;
+    lastCaptionSnapshot = '';
+  } catch (e) {
+    console.error('Cleanup error:', e);
   }
-  lastCaptionSnapshot = '';
 }
 
-window.addEventListener('beforeunload', cleanup);
+window.addEventListener('beforeunload', cleanup, { passive: true });
 
 if (isYouTube && overlayEnabled) {
   startObservers();
 }
+
