@@ -72,3 +72,58 @@ function applyThemePills(theme) {
   });
 });
 
+const examplesToggle = document.getElementById('examplesToggle');
+
+async function initExamples() {
+  const { showExamples = true } = await chrome.storage.sync.get(['showExamples']);
+  setExamplesToggle(showExamples);
+}
+
+function setExamplesToggle(on) {
+  examplesToggle.classList.toggle('on', on);
+}
+
+examplesToggle.addEventListener('click', async () => {
+  const isOn = !examplesToggle.classList.contains('on');
+  await chrome.storage.sync.set({ showExamples: isOn });
+  setExamplesToggle(isOn);
+  sendToTab({ action: 'UPDATE_SETTINGS', showExamples: isOn });
+});
+
+
+const savedList = document.getElementById('savedList');
+
+function renderSavedWords() {
+  const words = getSavedWords();
+  savedList.innerHTML = '';
+
+  if (words.length === 0) {
+    savedList.innerHTML = `
+      <div class="empty-state">
+        No saved words yet.<br>Click ★ in any tooltip to save a word.
+      </div>`;
+    return;
+  }
+
+  words.forEach(({ word, pos }, idx) => {
+    const row = document.createElement('div');
+    row.className = 'saved-word';
+    row.innerHTML = `
+      <div>
+        <div class="word-text">${word}</div>
+        ${pos ? `<div class="word-pos">${pos}</div>` : ''}
+      </div>
+      <button class="remove-btn" data-idx="${idx}" title="Remove">×</button>`;
+    savedList.appendChild(row);
+  });
+
+  savedList.querySelectorAll('.remove-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const words = getSavedWords();
+      words.splice(Number(btn.dataset.idx), 1);
+      setSavedWords(words);
+      renderSavedWords();
+    });
+  });
+}
+
