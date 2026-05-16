@@ -37,3 +37,16 @@ mainToggle.addEventListener('click', async () => {
   setMainToggle(isOn);
   sendToTab({ action: 'TOGGLE_OVERLAY', enabled: isOn });
 });
+
+const langSelect = document.getElementById('langSelect');
+
+async function initLang() {
+  const { translateTo = '' } = await chrome.storage.sync.get(['translateTo']);
+  langSelect.value = translateTo;
+}
+
+langSelect.addEventListener('change', async () => {
+  await chrome.storage.sync.set({ translateTo: langSelect.value });
+  sendToTab({ action: 'UPDATE_SETTINGS', translateTo: langSelect.value });
+});
+
