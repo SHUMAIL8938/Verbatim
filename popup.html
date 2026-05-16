@@ -15,6 +15,7 @@
       overflow-x: hidden;
     }
 
+    /* ── Header ── */
     .header {
       padding: 14px 16px;
       display: flex;
@@ -34,6 +35,174 @@
     .name { font-size: 14px; font-weight: 600; color: #e6edf3; }
     .tagline { font-size: 11px; color: #7d8590; margin-top: 1px; }
 
+    /* ── Main toggle ── */
+    .toggle-track {
+      width: 42px; height: 24px;
+      border-radius: 12px;
+      position: relative;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 0.2s;
+      background: #30363d;
+    }
+    .toggle-track.on { background: #4f8ef7; }
+    .toggle-thumb {
+      width: 18px; height: 18px;
+      background: #fff;
+      border-radius: 50%;
+      position: absolute;
+      top: 3px; left: 3px;
+      transition: left 0.2s;
+    }
+    .toggle-track.on .toggle-thumb { left: 21px; }
+
+    /* ── Mini toggle ── */
+    .mini-track {
+      width: 30px; height: 17px;
+      border-radius: 9px;
+      position: relative;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 0.2s;
+      background: #30363d;
+    }
+    .mini-track.on { background: #4f8ef7; }
+    .mini-thumb {
+      width: 13px; height: 13px;
+      background: #fff;
+      border-radius: 50%;
+      position: absolute;
+      top: 2px; left: 2px;
+      transition: left 0.15s;
+    }
+    .mini-track.on .mini-thumb { left: 15px; }
+
+    /* ── Sections ── */
+    .section { padding: 12px 16px; border-bottom: 1px solid #21262d; }
+    .section-label {
+      font-size: 10px;
+      color: #7d8590;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      font-weight: 500;
+      margin-bottom: 10px;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 0;
+    }
+    .row-label { font-size: 12px; color: #c9d1d9; }
+
+    /* ── Select ── */
+    select {
+      background: #161b22;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      font-size: 11px;
+      border-radius: 6px;
+      padding: 3px 6px;
+      outline: none;
+      cursor: pointer;
+      max-width: 140px;
+    }
+    select:hover { border-color: #484f58; }
+
+    /* ── Theme pills ── */
+    .theme-pills { display: flex; gap: 6px; }
+    .pill {
+      font-size: 11px;
+      padding: 3px 12px;
+      border-radius: 20px;
+      cursor: pointer;
+      border: 1px solid #30363d;
+      color: #7d8590;
+      background: transparent;
+      transition: all 0.15s;
+    }
+    .pill.active-dark  { background: #1a1f2e; color: #c9d1d9; border-color: #4f8ef7; }
+    .pill.active-light { background: #f0f2f4; color: #333;    border-color: #4f8ef7; }
+
+    /* ── Saved words ── */
+    .saved-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .export-btn {
+      font-size: 10px;
+      color: #7d8590;
+      background: none;
+      border: 1px solid #30363d;
+      border-radius: 5px;
+      padding: 3px 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      transition: all 0.15s;
+    }
+    .export-btn:hover { color: #e6edf3; border-color: #484f58; }
+
+    .saved-list { display: flex; flex-direction: column; }
+    .saved-word {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 0;
+      border-bottom: 1px solid #161b22;
+    }
+    .saved-word:last-child { border-bottom: none; }
+    .word-text { font-size: 13px; color: #c9d1d9; font-weight: 500; }
+    .word-pos  { font-size: 10px; color: #7d8590; margin-top: 1px; }
+    .remove-btn {
+      font-size: 16px;
+      color: #484f58;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+      transition: color 0.15s;
+    }
+    .remove-btn:hover { color: #e85555; }
+
+    .empty-state {
+      text-align: center;
+      padding: 14px 0 6px;
+      font-size: 12px;
+      color: #484f58;
+      line-height: 1.5;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .clear-btn {
+      font-size: 11px;
+      color: #7d8590;
+      background: none;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 4px 10px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .clear-btn:hover { color: #e85555; border-color: #e85555; }
+    .version { font-size: 10px; color: #484f58; }
+
+    /* ── Disabled state ── */
+    body.disabled .section,
+    body.disabled .footer .clear-btn {
+      opacity: 0.4;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
