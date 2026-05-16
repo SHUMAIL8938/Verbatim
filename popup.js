@@ -18,3 +18,22 @@ function sendToTab(msg) {
   });
 }
 
+
+const mainToggle = document.getElementById('mainToggle');
+
+async function initMainToggle() {
+  const { enabled = true } = await chrome.storage.sync.get(['enabled']);
+  setMainToggle(enabled);
+}
+
+function setMainToggle(on) {
+  mainToggle.classList.toggle('on', on);
+  document.body.classList.toggle('disabled', !on);
+}
+
+mainToggle.addEventListener('click', async () => {
+  const isOn = !mainToggle.classList.contains('on');
+  await chrome.storage.sync.set({ enabled: isOn });
+  setMainToggle(isOn);
+  sendToTab({ action: 'TOGGLE_OVERLAY', enabled: isOn });
+});
