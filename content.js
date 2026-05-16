@@ -335,7 +335,7 @@ function ensureOverlayContainer() {
 
 function buildOverlayForCaptionElement(captionEl, fragment) {
   if (!captionEl || !fragment) return;
-  
+  //tree is being implemented from down there
   const walker = document.createTreeWalker(captionEl, NodeFilter.SHOW_TEXT);
   const textNodes = [];
   while (walker.nextNode()) textNodes.push(walker.currentNode);
