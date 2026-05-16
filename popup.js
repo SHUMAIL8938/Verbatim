@@ -50,3 +50,25 @@ langSelect.addEventListener('change', async () => {
   sendToTab({ action: 'UPDATE_SETTINGS', translateTo: langSelect.value });
 });
 
+const pillDark  = document.getElementById('pillDark');
+const pillLight = document.getElementById('pillLight');
+
+async function initTheme() {
+  const { tooltipTheme = 'dark' } = await chrome.storage.sync.get(['tooltipTheme']);
+  applyThemePills(tooltipTheme);
+}
+
+function applyThemePills(theme) {
+  pillDark.className  = 'pill' + (theme === 'dark'  ? ' active-dark'  : '');
+  pillLight.className = 'pill' + (theme === 'light' ? ' active-light' : '');
+}
+
+[pillDark, pillLight].forEach(pill => {
+  pill.addEventListener('click', async () => {
+    const theme = pill.dataset.theme;
+    await chrome.storage.sync.set({ tooltipTheme: theme });
+    applyThemePills(theme);
+    sendToTab({ action: 'UPDATE_SETTINGS', tooltipTheme: theme });
+  });
+});
+
