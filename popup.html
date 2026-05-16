@@ -2,33 +2,70 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Verbatim Settings</title>
+  <title>Verbatim</title>
   <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
-      font-family: system-ui, sans-serif;
+      font-family: system-ui, -apple-system, sans-serif;
       background: #0d1117;
       color: #e6edf3;
-      padding: 12px 16px;
-      width: 260px;
-      margin: 0;
+      width: 300px;
+      min-height: 100px;
+      overflow-x: hidden;
     }
-    h3 {
-      margin: 0 0 10px;
-      font-size: 16px;
-      color: #58a6ff;
+
+    .header {
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #21262d;
     }
-    label {
-      display: block;
-      margin-top: 12px;
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .logo {
+      width: 30px; height: 30px;
+      background: #1a1f2e;
+      border-radius: 8px;
+      border: 1px solid #30363d;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
     }
+    .name { font-size: 14px; font-weight: 600; color: #e6edf3; }
+    .tagline { font-size: 11px; color: #7d8590; margin-top: 1px; }
+
   </style>
 </head>
 <body>
-  <h3>Verbatim Settings</h3>
-  <label>
-    <input type="checkbox" id="toggleFeature" />
-    Enable Dictionary
-  </label>
+
+  <div class="header">
+    <div class="header-left">
+      <div class="logo">
+        <svg width="18" height="18" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+          <rect width="128" height="128" rx="24" fill="#1a1f2e"/>
+          <rect x="22" y="38" width="58" height="7" rx="3.5" fill="#4f8ef7"/>
+          <rect x="22" y="52" width="58" height="7" rx="3.5" fill="#ffffff" opacity="0.3"/>
+          <rect x="84" y="52" width="22" height="7" rx="3.5" fill="#4f8ef7" opacity="0.6"/>
+          <rect x="22" y="66" width="38" height="7" rx="3.5" fill="#ffffff" opacity="0.3"/>
+          <rect x="64" y="66" width="28" height="7" rx="3.5" fill="#4f8ef7" opacity="0.6"/>
+          <rect x="16" y="80" width="96" height="28" rx="10" fill="#4f8ef7"/>
+          <text x="64" y="99" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="18" fill="#ffffff">V</text>
+        </svg>
+      </div>
+      <div>
+        <div class="name">Verbatim</div>
+        <div class="tagline">Instant definitions</div>
+      </div>
+    </div>
+    <div class="toggle-track" id="mainToggle">
+      <div class="toggle-thumb"></div>
+    </div>
+  </div>
+
+  <div class="section" id="prefsSection">
+    <div class="section-label">Preferences</div>
+  </div>
+
   <script src="popup.js"></script>
 </body>
 </html>
